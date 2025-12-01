@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Star, MessageCircleHeart, Sparkles, Bookmark, X, Clock, Instagram } from 'lucide-react';
+import { Heart, Star, MessageCircleHeart, Sparkles, Bookmark, X, Clock, Instagram, Lock, Key, LogOut } from 'lucide-react';
 import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "firebase/auth";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
 import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, serverTimestamp } from "firebase/firestore";
 
 // --- CONFIGURATION & CONTENT ---
 
-// 💕 CUSTOMIZE HERE 💕
 const HER_NAME = "Arsha"; 
 const YOUR_NAME = "CUTIE"; 
 
@@ -136,8 +135,7 @@ I love you, I'm proud of you, and you're the best part of my life. ❤
 എന്നും നിന്റെ സ്വന്തം...
 `;
 
-// --- FIREBASE SETUP (LOCAL VS CODE VERSION) ---
-// This reads from your .env.local file automatically
+// --- FIREBASE SETUP ---
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -147,24 +145,101 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Initialize Firebase safely
 let app, auth, db;
 try {
   app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
 } catch (error) {
-  console.error("Firebase init error. Please check your .env.local file.", error);
+  console.error("Firebase init error", error);
 }
 
 const appId = "daily-compliment-app";
 
-// --- COMPONENTS ---
+// --- LOGIN COMPONENT ---
+const LoginScreen = () => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-// New Love Clock Component
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    // 1. Client-side Email Check
+    if (email.toLowerCase().trim() !== "arsha@love.com") {
+        setError("Sorry! This app is exclusively made for Arsha ❤");
+        setLoading(false);
+        return;
+    }
+
+    try {
+      // 2. Firebase Authentication
+      await signInWithEmailAndPassword(auth, email, password);
+    } catch (err) {
+      // Provide a helpful hint if it's the right email but wrong password
+      if (err.code === 'auth/wrong-password') {
+        setError("Incorrect password, my queen! Hint: 123456");
+      } else if (err.code === 'auth/user-not-found') {
+        setError("User setup required in Firebase Console.");
+      } else {
+        setError("Login failed. Please try again.");
+      }
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-rose-100 to-pink-50 flex flex-col items-center justify-center p-6">
+      <div className="bg-white/80 backdrop-blur-md p-8 rounded-3xl shadow-xl w-full max-w-sm border border-rose-100">
+        <div className="flex justify-center mb-6">
+           <div className="bg-rose-100 p-4 rounded-full animate-bounce">
+             <Lock className="w-8 h-8 text-rose-500" />
+           </div>
+        </div>
+        <h2 className="text-2xl font-bold text-center text-rose-900 mb-2">Arsha's Private Space</h2>
+        <p className="text-center text-gray-500 mb-8 text-sm">Please enter your secret key to enter.</p>
+        
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <input 
+              type="email" 
+              placeholder="Email Address"
+              className="w-full p-4 rounded-xl bg-rose-50 border border-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-400 text-gray-700 placeholder-rose-300"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div>
+            <input 
+              type="password" 
+              placeholder="Password"
+              className="w-full p-4 rounded-xl bg-rose-50 border border-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-400 text-gray-700 placeholder-rose-300"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          
+          {error && <p className="text-red-500 text-xs text-center font-bold">{error}</p>}
+
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full py-4 rounded-xl bg-gradient-to-r from-rose-400 to-pink-500 text-white font-bold shadow-lg shadow-rose-200 transform transition-transform active:scale-95 flex justify-center gap-2"
+          >
+            {loading ? <Sparkles className="animate-spin" /> : <span className="flex items-center gap-2"><Key size={18}/> Unlock My Gift</span>}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// --- CLOCK COMPONENT ---
 const LoveClock = () => {
   const [time, setTime] = useState(new Date());
-
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -230,36 +305,28 @@ const Button = ({ onClick, children, variant = "primary", className = "" }) => {
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true); // New loading state
   const [showSplash, setShowSplash] = useState(true);
   const [view, setView] = useState("home"); 
   const [favorites, setFavorites] = useState([]);
   
-  // Content State
   const [extraCompliment, setExtraCompliment] = useState(null);
   const [personalMsg, setPersonalMsg] = useState(null);
   const [funFact, setFunFact] = useState(null);
 
-  // --- AUTH & DATABASE ---
+  // --- AUTH LISTENER ---
   useEffect(() => {
-    const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        await signInAnonymously(auth);
-      }
-    };
-    initAuth();
-    
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      setAuthLoading(false); // Stop loading once we know if user is logged in or not
     });
     return () => unsubscribe();
   }, []);
 
+  // --- DATA FETCHING ---
   useEffect(() => {
     if (!user) return;
 
-    // Use standard Firestore path
     const favsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'favorites');
     const q = query(favsRef);
 
@@ -273,8 +340,7 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  // --- LOGIC ---
-
+  // --- FUNCTIONS ---
   const getDailyCompliment = () => {
     // Uses the day of the month to pick a consistent daily message
     const today = new Date().getDate();
@@ -285,15 +351,12 @@ export default function App() {
     const random = Math.floor(Math.random() * EXTRA_COMPLIMENTS.length);
     setExtraCompliment(EXTRA_COMPLIMENTS[random]);
     
-    // Also randomly trigger a personal message or fact sometimes
     if (Math.random() > 0.7) {
       const pRandom = Math.floor(Math.random() * PERSONAL_MESSAGES.length);
       setPersonalMsg(PERSONAL_MESSAGES[pRandom]);
     } else {
       setPersonalMsg(null);
     }
-    
-    // Reset fact
     setFunFact(null);
   };
 
@@ -306,29 +369,31 @@ export default function App() {
 
   const toggleFavorite = async (text) => {
     if (!user) return;
-    
     const favsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'favorites');
-
     const existing = favorites.find(f => f.text === text);
     
     if (existing) {
       await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'favorites', existing.id));
     } else {
-      await addDoc(favsRef, {
-        text: text,
-        savedAt: serverTimestamp()
-      });
+      await addDoc(favsRef, { text: text, savedAt: serverTimestamp() });
     }
   };
 
   const isFav = (text) => favorites.some(f => f.text === text);
+  const handleLogout = () => signOut(auth);
 
-  // --- RENDERING ---
+  // --- RENDER LOGIC ---
 
-  if (showSplash) {
-    return <SplashScreen onComplete={() => setShowSplash(false)} />;
-  }
+  // 1. Show blank while checking login status
+  if (authLoading) return <div className="min-h-screen bg-pink-50 flex items-center justify-center"><Heart className="animate-ping text-rose-400" /></div>;
 
+  // 2. Show Login Screen if not logged in
+  if (!user) return <LoginScreen />;
+
+  // 3. Show Splash Screen after login
+  if (showSplash) return <SplashScreen onComplete={() => setShowSplash(false)} />;
+
+  // 4. Show Main App
   const renderContent = () => {
     switch (view) {
       case 'note':
@@ -340,16 +405,13 @@ export default function App() {
                 </button>
                 <h2 className="text-2xl font-serif font-bold text-rose-900">Message from Him</h2>
              </div>
-             
              <Card className="bg-gradient-to-br from-rose-50/50 to-white border-rose-100">
                 <div className="flex justify-center mb-6">
                    <div className="bg-rose-100 p-4 rounded-full shadow-inner">
                      <MessageCircleHeart className="w-10 h-10 text-rose-500" />
                    </div>
                 </div>
-                <p className="text-gray-800 whitespace-pre-line text-center font-serif text-lg leading-loose italic">
-                  "{LOVE_NOTE}"
-                </p>
+                <p className="text-gray-800 whitespace-pre-line text-center font-serif text-lg leading-loose italic">"{LOVE_NOTE}"</p>
                 <div className="mt-8 text-right">
                   <p className="text-sm text-rose-500 font-bold tracking-widest uppercase">- {YOUR_NAME}</p>
                 </div>
@@ -371,16 +433,12 @@ export default function App() {
                <div className="text-center py-16 text-gray-400 flex flex-col items-center">
                  <Heart className="w-16 h-16 mb-4 text-gray-200 fill-gray-50" />
                  <p className="text-lg font-medium">No favorites saved yet!</p>
-                 <p className="text-sm mt-2">Tap the bookmark icon to save the ones you love.</p>
                </div>
              ) : (
                favorites.map((fav) => (
                  <Card key={fav.id} className="mb-4 relative overflow-hidden group">
                    <p className="text-gray-800 font-medium pr-10 leading-relaxed">"{fav.text}"</p>
-                   <button 
-                     onClick={() => toggleFavorite(fav.text)}
-                     className="absolute top-4 right-4 text-rose-400 hover:text-rose-600 transition-colors p-2"
-                   >
+                   <button onClick={() => toggleFavorite(fav.text)} className="absolute top-4 right-4 text-rose-400 hover:text-rose-600 transition-colors p-2">
                      <Heart className="fill-rose-500 w-6 h-6" />
                    </button>
                  </Card>
@@ -393,21 +451,28 @@ export default function App() {
       default:
         return (
           <div className="space-y-8 pb-28">
-            {/* Header */}
-            <div className="flex justify-between items-end">
+             {/* Header */}
+             <div className="flex justify-between items-end">
               <div>
                 <h2 className="text-lg font-medium text-rose-400 tracking-wide uppercase">Hello My Sunshine,</h2>
                 <h3 className="text-4xl font-serif font-bold text-rose-900 mt-1">My {HER_NAME} 💖</h3>
               </div>
-              <div 
-                className="bg-white p-3 rounded-full shadow-[0_4px_12px_rgb(0,0,0,0.05)] border border-rose-50 cursor-pointer hover:shadow-md transition-shadow group"
-                onClick={() => setView('note')}
-              >
-                <MessageCircleHeart className="text-rose-400 w-7 h-7 group-hover:text-rose-500 transition-colors" />
+              <div className="flex gap-2">
+                <button 
+                  className="bg-white p-3 rounded-full shadow-[0_4px_12px_rgb(0,0,0,0.05)] border border-rose-50 cursor-pointer hover:shadow-md transition-shadow group"
+                  onClick={() => setView('note')}
+                >
+                  <MessageCircleHeart className="text-rose-400 w-7 h-7 group-hover:text-rose-500 transition-colors" />
+                </button>
+                <button 
+                  className="bg-white p-3 rounded-full shadow-[0_4px_12px_rgb(0,0,0,0.05)] border border-rose-50 cursor-pointer hover:shadow-md transition-shadow group"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="text-rose-400 w-7 h-7 group-hover:text-rose-500 transition-colors" />
+                </button>
               </div>
             </div>
 
-            {/* Love Clock */}
             <LoveClock />
 
             {/* Daily Card */}
@@ -417,12 +482,8 @@ export default function App() {
                 <span className="text-xs font-bold text-rose-400 uppercase tracking-wider">Today's Special Message</span>
               </div>
               <Card className="bg-gradient-to-br from-rose-500 via-pink-500 to-rose-400 text-white border-none transform transition-all hover:-translate-y-1 shadow-rose-300/30 shadow-xl">
-                <div className="absolute top-0 right-0 -mt-8 -mr-8 text-white/10">
-                  <Heart size={120} fill="currentColor" />
-                </div>
-                <p className="text-2xl font-serif font-medium text-center leading-relaxed relative z-10 py-4">
-                  "{getDailyCompliment()}"
-                </p>
+                <div className="absolute top-0 right-0 -mt-8 -mr-8 text-white/10"><Heart size={120} fill="currentColor" /></div>
+                <p className="text-2xl font-serif font-medium text-center leading-relaxed relative z-10 py-4">"{getDailyCompliment()}"</p>
                 <div className="mt-6 flex justify-center relative z-10">
                    <button onClick={() => toggleFavorite(getDailyCompliment())} className="bg-white/20 hover:bg-white/30 transition-colors p-3 rounded-full backdrop-blur-md">
                      <Bookmark className={isFav(getDailyCompliment()) ? "fill-white text-white" : "text-white"} size={22} />
@@ -431,51 +492,34 @@ export default function App() {
               </Card>
             </section>
 
-            {/* Personalized Pop-up */}
+            {/* Personal Popups */}
             {personalMsg && (
               <div className="animate-bounce-in bg-white/60 backdrop-blur-md border-l-4 border-rose-400 p-5 rounded-2xl shadow-sm relative overflow-hidden">
-                 <div className="absolute -right-4 -bottom-4 text-rose-100/50">
-                   <MessageCircleHeart size={80} fill="currentColor" />
-                 </div>
-                 <p className="text-rose-800 font-medium text-sm flex gap-2 items-center relative z-10">
-                   <MessageCircleHeart size={18} /> 
-                   From {YOUR_NAME}:
-                 </p>
+                 <div className="absolute -right-4 -bottom-4 text-rose-100/50"><MessageCircleHeart size={80} fill="currentColor" /></div>
+                 <p className="text-rose-800 font-medium text-sm flex gap-2 items-center relative z-10"><MessageCircleHeart size={18} /> From {YOUR_NAME}:</p>
                  <p className="text-gray-800 mt-2 italic text-lg font-serif leading-relaxed relative z-10">"{personalMsg}"</p>
               </div>
             )}
 
-            {/* Extra Compliment Area */}
+            {/* Extra Compliments */}
             <section className="space-y-5">
-              <div className="flex justify-between items-center ml-1">
-                <span className="text-xs font-bold text-rose-400 uppercase tracking-wider">Need more love?</span>
-              </div>
-              
+              <div className="flex justify-between items-center ml-1"><span className="text-xs font-bold text-rose-400 uppercase tracking-wider">Need more love?</span></div>
               {(extraCompliment || funFact) && (
                 <div className="animate-fade-in relative z-10">
                   <Card className="bg-white/80 backdrop-blur-sm border-rose-100 text-center">
-                    <div className="absolute -left-4 -top-4 text-rose-50">
-                      <Sparkles size={60} fill="currentColor" />
-                    </div>
-                    <p className="text-xl text-gray-800 font-serif font-medium leading-relaxed relative z-10 py-2">
-                      {funFact ? funFact : `"${extraCompliment}"`}
-                    </p>
+                    <div className="absolute -left-4 -top-4 text-rose-50"><Sparkles size={60} fill="currentColor" /></div>
+                    <p className="text-xl text-gray-800 font-serif font-medium leading-relaxed relative z-10 py-2">{funFact ? funFact : `"${extraCompliment}"`}</p>
                     <div className="mt-5 flex justify-center relative z-10">
-                       <button 
-                        onClick={() => toggleFavorite(funFact || extraCompliment)} 
-                        className="text-rose-300 hover:text-rose-500 transition-colors p-2 bg-rose-50 rounded-full"
-                      >
+                       <button onClick={() => toggleFavorite(funFact || extraCompliment)} className="text-rose-300 hover:text-rose-500 transition-colors p-2 bg-rose-50 rounded-full">
                          <Heart className={isFav(funFact || extraCompliment) ? "fill-rose-500 text-rose-500" : ""} size={24} />
                        </button>
                     </div>
                   </Card>
                 </div>
               )}
-
               <Button onClick={generateExtra} variant="primary" className="shadow-lg shadow-rose-200/50 relative overflow-hidden group">
                 <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-                <Heart className="fill-white w-6 h-6 animate-pulse relative z-10" />
-                <span className="relative z-10">Tap for Extra Love</span>
+                <Heart className="fill-white w-6 h-6 animate-pulse relative z-10" /><span className="relative z-10">Tap for Extra Love</span>
               </Button>
             </section>
 
@@ -483,23 +527,16 @@ export default function App() {
             <section>
               <span className="text-xs font-bold text-rose-400 uppercase tracking-wider block mb-4 ml-1">Fun Categories</span>
               <div className="grid grid-cols-2 gap-4">
-                 <Button variant="secondary" onClick={() => generateCategory(ROASTS)} className="text-sm py-3">
-                   🔥 Cute Roasts
-                 </Button>
-                 <Button variant="secondary" onClick={() => generateCategory(FACTS)} className="text-sm py-3">
-                   📚 Her Facts
-                 </Button>
-                 <Button variant="secondary" onClick={() => generateCategory(FLIRTS)} className="text-sm col-span-2 py-3 bg-gradient-to-r from-rose-50 to-pink-50 border-none text-rose-600">
-                   💋 Flirt Mode
-                 </Button>
+                 <Button variant="secondary" onClick={() => generateCategory(ROASTS)} className="text-sm py-3">🔥 Cute Roasts</Button>
+                 <Button variant="secondary" onClick={() => generateCategory(FACTS)} className="text-sm py-3">📚 Her Facts</Button>
+                 <Button variant="secondary" onClick={() => generateCategory(FLIRTS)} className="text-sm col-span-2 py-3 bg-gradient-to-r from-rose-50 to-pink-50 border-none text-rose-600">💋 Flirt Mode</Button>
               </div>
             </section>
 
             {/* Instagram Link */}
             <div className="flex justify-center mt-8 mb-4">
               <a href="https://www.instagram.com/arsha.a_?igsh=MTk1dHNtdDA1ZzljbA==" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-pink-400 hover:text-pink-600 transition-colors text-xs font-bold uppercase tracking-widest bg-white/50 px-4 py-2 rounded-full border border-pink-100 backdrop-blur-sm">
-                <Instagram size={16} />
-                Follow the Queen
+                <Instagram size={16} /> Follow the Queen
               </a>
             </div>
           </div>
@@ -509,81 +546,32 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#fff0f5] font-sans text-gray-800 relative selection:bg-rose-200 overflow-hidden">
-      {/* Background Pattern */}
-      <div className="absolute inset-0 opacity-10 pointer-events-none" style={{
-        backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ec4899' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`
-      }} />
+      {/* Background */}
+      <div className="absolute inset-0 opacity-10 pointer-events-none" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ec4899' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")` }} />
 
-      {/* Mobile Frame Container */}
       <div className="max-w-md mx-auto min-h-screen shadow-2xl overflow-hidden relative backdrop-blur-sm bg-white/30">
-        
-        {/* Main Content Scrollable Area */}
         <div className="p-6 h-full overflow-y-auto custom-scrollbar relative z-10 pb-28">
           {renderContent()}
         </div>
 
-        {/* Bottom Navigation */}
+        {/* Bottom Nav */}
         <div className="absolute bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-rose-100/50 py-2 px-8 flex justify-between items-end z-20 h-20 rounded-t-3xl shadow-[0_-4px_20px_rgb(0,0,0,0.03)]">
-          <button 
-            onClick={() => setView('home')} 
-            className={`flex flex-col items-center gap-1 pb-3 transition-colors ${view === 'home' ? 'text-rose-500' : 'text-gray-400 hover:text-rose-400'}`}
-          >
-            <Sparkles size={26} />
-            <span className="text-[10px] font-bold tracking-wider uppercase">Today</span>
+          <button onClick={() => setView('home')} className={`flex flex-col items-center gap-1 pb-3 transition-colors ${view === 'home' ? 'text-rose-500' : 'text-gray-400 hover:text-rose-400'}`}>
+            <Sparkles size={26} /><span className="text-[10px] font-bold tracking-wider uppercase">Today</span>
           </button>
           
           <div className="relative -top-5">
-             <button 
-               onClick={generateExtra}
-               className="bg-gradient-to-r from-rose-500 to-pink-500 text-white p-5 rounded-full shadow-lg shadow-rose-300/50 hover:scale-105 transition-transform group relative overflow-hidden"
-             >
+             <button onClick={generateExtra} className="bg-gradient-to-r from-rose-500 to-pink-500 text-white p-5 rounded-full shadow-lg shadow-rose-300/50 hover:scale-105 transition-transform group relative overflow-hidden">
                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
                <Heart className="fill-white w-7 h-7 relative z-10" />
              </button>
           </div>
 
-          <button 
-            onClick={() => setView('favorites')} 
-            className={`flex flex-col items-center gap-1 pb-3 transition-colors ${view === 'favorites' ? 'text-rose-500' : 'text-gray-400 hover:text-rose-400'}`}
-          >
-            <Star size={26} className={view === 'favorites' ? "fill-rose-500" : ""} />
-            <span className="text-[10px] font-bold tracking-wider uppercase">Favs</span>
+          <button onClick={() => setView('favorites')} className={`flex flex-col items-center gap-1 pb-3 transition-colors ${view === 'favorites' ? 'text-rose-500' : 'text-gray-400 hover:text-rose-400'}`}>
+            <Star size={26} className={view === 'favorites' ? "fill-rose-500" : ""} /><span className="text-[10px] font-bold tracking-wider uppercase">Favs</span>
           </button>
         </div>
-
       </div>
-      
-      <style>{`
-        /* Import a nice serif font for headings */
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
-
-        .font-serif {
-          font-family: 'Playfair+Display', serif;
-        }
-
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background-color: #fbcfe8;
-          border-radius: 4px;
-        }
-        @keyframes fade-in {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in {
-          animation: fade-in 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-        }
-        @keyframes bounce-in {
-          0% { transform: scale(0.9); opacity: 0; }
-          60% { transform: scale(1.02); opacity: 1; }
-          100% { transform: scale(1); }
-        }
-        .animate-bounce-in {
-          animation: bounce-in 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
-        }
-      `}</style>
     </div>
   );
 }
