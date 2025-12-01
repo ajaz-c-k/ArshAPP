@@ -1,8 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Star, MessageCircleHeart, Sparkles, Bookmark, X, Clock, Instagram, Lock, Key, LogOut } from 'lucide-react';
+import { 
+  Heart, 
+  Star, 
+  MessageCircleHeart, 
+  Sparkles, 
+  Bookmark, 
+  X, 
+  Clock, 
+  Instagram, 
+  Lock, 
+  Key, 
+  LogOut,
+  BookHeart, // Added for Diary
+  PenLine    // Added for Diary
+} from 'lucide-react';
 import { initializeApp } from "firebase/app";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "firebase/auth";
-import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, serverTimestamp } from "firebase/firestore";
+import { 
+  getAuth, 
+  signInWithEmailAndPassword, // Restored for local use
+  onAuthStateChanged, 
+  signOut 
+} from "firebase/auth";
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  deleteDoc, 
+  doc, 
+  onSnapshot, 
+  query, 
+  serverTimestamp,
+  orderBy 
+} from "firebase/firestore";
 
 // --- CONFIGURATION & CONTENT ---
 
@@ -136,6 +165,7 @@ I love you, I'm proud of you, and you're the best part of my life. ❤
 `;
 
 // --- FIREBASE SETUP ---
+// NOTE: Make sure these variables are set in your .env file locally!
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -176,10 +206,10 @@ const LoginScreen = () => {
     }
 
     try {
-      // 2. Firebase Authentication
+      // 2. Firebase Authentication (Restored Email/Password login)
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err) {
-      // Provide a helpful hint if it's the right email but wrong password
+      console.error(err);
       if (err.code === 'auth/wrong-password') {
         setError("Incorrect password, my queen! Hint: 123456");
       } else if (err.code === 'auth/user-not-found') {
@@ -310,6 +340,10 @@ export default function App() {
   const [view, setView] = useState("home"); 
   const [favorites, setFavorites] = useState([]);
   
+  // -- NEW STATE FOR DIARY --
+  const [memories, setMemories] = useState([]);
+  const [newMemory, setNewMemory] = useState("");
+  
   const [extraCompliment, setExtraCompliment] = useState(null);
   const [personalMsg, setPersonalMsg] = useState(null);
   const [funFact, setFunFact] = useState(null);
@@ -327,17 +361,32 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
+    // 1. Fetch Favorites
     const favsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'favorites');
-    const q = query(favsRef);
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribeFav = onSnapshot(query(favsRef), (snapshot) => {
       const favs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setFavorites(favs);
     }, (error) => {
       console.error("Error fetching favorites:", error);
     });
 
-    return () => unsubscribe();
+    // 2. Fetch Memories (Diary)
+    const memoriesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'memories');
+    // Using simple query for stability, sorting in memory
+    const unsubscribeMem = onSnapshot(query(memoriesRef), (snapshot) => {
+      const mems = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data() 
+      }));
+      // Sort manually to avoid composite index issues in preview
+      mems.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
+      setMemories(mems);
+    });
+
+    return () => {
+        unsubscribeFav();
+        unsubscribeMem();
+    };
   }, [user]);
 
   // --- FUNCTIONS ---
@@ -379,6 +428,30 @@ export default function App() {
     }
   };
 
+  // -- DIARY FUNCTIONS --
+  const saveMemory = async (e) => {
+    e.preventDefault();
+    if (!newMemory.trim() || !user) return;
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'memories'), {
+        text: newMemory,
+        timestamp: serverTimestamp()
+      });
+      setNewMemory("");
+    } catch (err) {
+      console.error("Error saving memory:", err);
+    }
+  };
+
+  const deleteMemory = async (id) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'memories', id));
+    } catch (err) {
+      console.error("Error deleting memory:", err);
+    }
+  };
+
   const isFav = (text) => favorites.some(f => f.text === text);
   const handleLogout = () => signOut(auth);
 
@@ -416,6 +489,63 @@ export default function App() {
                   <p className="text-sm text-rose-500 font-bold tracking-widest uppercase">- {YOUR_NAME}</p>
                 </div>
              </Card>
+          </div>
+        );
+
+      case 'diary': // -- NEW DIARY VIEW --
+        return (
+          <div className="space-y-6 animate-fade-in pb-24">
+             <div className="flex items-center gap-3 mb-6">
+                <button onClick={() => setView('home')} className="p-2 bg-rose-100 rounded-full text-rose-600 hover:bg-rose-200 transition-colors">
+                  <X size={20} />
+                </button>
+                <h2 className="text-2xl font-serif font-bold text-rose-900">My Memory Diary</h2>
+             </div>
+
+             {/* Write New Memory */}
+             <Card className="bg-white border-rose-200">
+               <form onSubmit={saveMemory}>
+                 <label className="block text-sm font-bold text-rose-400 uppercase tracking-wider mb-2">
+                   <PenLine className="inline w-4 h-4 mr-1" /> Write today's best memory
+                 </label>
+                 <textarea
+                   value={newMemory}
+                   onChange={(e) => setNewMemory(e.target.value)}
+                   placeholder="What made you smile today, Arsha?"
+                   className="w-full p-4 rounded-xl bg-rose-50 border border-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-300 text-gray-700 placeholder-rose-300 min-h-[100px] mb-3"
+                 />
+                 <Button type="submit" variant="primary" className="py-2 text-sm">Save to Diary</Button>
+               </form>
+             </Card>
+
+             {/* Memory List */}
+             <div className="space-y-4">
+               <h3 className="text-lg font-bold text-rose-800 ml-1">Past Memories</h3>
+               {memories.length === 0 ? (
+                 <div className="text-center py-8 text-gray-400">
+                   <BookHeart className="w-12 h-12 mx-auto mb-2 text-rose-100" />
+                   <p className="text-sm">No memories written yet...</p>
+                 </div>
+               ) : (
+                 memories.map((mem) => (
+                   <div key={mem.id} className="bg-white/60 backdrop-blur-sm p-4 rounded-2xl border border-rose-50 shadow-sm relative group">
+                     <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{mem.text}</p>
+                     <div className="flex justify-between items-end mt-3 border-t border-rose-50 pt-2">
+                       <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wider">
+                         {mem.timestamp ? new Date(mem.timestamp.seconds * 1000).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'Just now'}
+                       </span>
+                       <button 
+                         onClick={() => deleteMemory(mem.id)}
+                         className="text-gray-300 hover:text-red-400 transition-colors p-1"
+                         title="Delete Memory"
+                       >
+                         <X size={14} />
+                       </button>
+                     </div>
+                   </div>
+                 ))
+               )}
+             </div>
           </div>
         );
 
@@ -555,20 +685,24 @@ export default function App() {
         </div>
 
         {/* Bottom Nav */}
-        <div className="absolute bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-rose-100/50 py-2 px-8 flex justify-between items-end z-20 h-20 rounded-t-3xl shadow-[0_-4px_20px_rgb(0,0,0,0.03)]">
+        <div className="absolute bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-rose-100/50 py-2 px-6 flex justify-between items-end z-20 h-20 rounded-t-3xl shadow-[0_-4px_20px_rgb(0,0,0,0.03)]">
           <button onClick={() => setView('home')} className={`flex flex-col items-center gap-1 pb-3 transition-colors ${view === 'home' ? 'text-rose-500' : 'text-gray-400 hover:text-rose-400'}`}>
-            <Sparkles size={26} /><span className="text-[10px] font-bold tracking-wider uppercase">Today</span>
+            <Sparkles size={24} /><span className="text-[10px] font-bold tracking-wider uppercase">Today</span>
+          </button>
+          
+          <button onClick={() => setView('diary')} className={`flex flex-col items-center gap-1 pb-3 transition-colors ${view === 'diary' ? 'text-rose-500' : 'text-gray-400 hover:text-rose-400'}`}>
+            <BookHeart size={24} /><span className="text-[10px] font-bold tracking-wider uppercase">Diary</span>
           </button>
           
           <div className="relative -top-5">
-             <button onClick={generateExtra} className="bg-gradient-to-r from-rose-500 to-pink-500 text-white p-5 rounded-full shadow-lg shadow-rose-300/50 hover:scale-105 transition-transform group relative overflow-hidden">
+              <button onClick={generateExtra} className="bg-gradient-to-r from-rose-500 to-pink-500 text-white p-4 rounded-full shadow-lg shadow-rose-300/50 hover:scale-105 transition-transform group relative overflow-hidden">
                <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-               <Heart className="fill-white w-7 h-7 relative z-10" />
-             </button>
+               <Heart className="fill-white w-6 h-6 relative z-10" />
+              </button>
           </div>
 
           <button onClick={() => setView('favorites')} className={`flex flex-col items-center gap-1 pb-3 transition-colors ${view === 'favorites' ? 'text-rose-500' : 'text-gray-400 hover:text-rose-400'}`}>
-            <Star size={26} className={view === 'favorites' ? "fill-rose-500" : ""} /><span className="text-[10px] font-bold tracking-wider uppercase">Favs</span>
+            <Star size={24} className={view === 'favorites' ? "fill-rose-500" : ""} /><span className="text-[10px] font-bold tracking-wider uppercase">Favs</span>
           </button>
         </div>
       </div>
